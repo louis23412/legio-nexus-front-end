@@ -137,6 +137,33 @@ img {
 
     border-radius: 1rem;
     border: 1px solid #FE5E41;
+
+    word-break: break-word;
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    overflow-y: auto;
+}
+
+.black-background {
+    background-color: black;
+    padding: 1rem;
+    border-radius: 1rem;
+}
+
+pre {
+    white-space: pre-wrap;
+    white-space: -moz-pre-wrap; 
+    white-space: -pre-wrap;
+    white-space: -o-pre-wrap;
+    word-wrap: break-word;
+}
+
+.black-text {
+    color: black;
 }
 
 .sticky-bottom {
@@ -182,6 +209,85 @@ img {
 div .event-clear {
     display: flex;
     justify-self: center;
+}
+
+.think-div {
+    border: 1px solid #345995;
+    background-color: #345995;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    width: fit-content;
+}
+
+.speak-div {
+    border: 1px solid #226F54;
+    background-color: #226F54;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    width: fit-content;
+}
+
+.user-prompt-div {
+    border: 1px solid #FE5E41;
+    background-color: #FE5E41;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    width: fit-content;
+}
+
+.think-div p, .speak-div p, .user-prompt-div p {
+    padding: 0;
+    margin: 0.1rem;
+}
+
+.underline {
+    text-decoration: underline;
+}
+
+.bolder {
+    font-weight: bolder;
+}
+
+.tool-call-div {
+    border: 1px solid #F6AE2D;
+    background-color: #F6AE2D;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    width: fit-content;
+}
+
+.sanity-div {
+    border: 1px solid #515052;
+    background-color: #515052;
+    color: #fbf5f3;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    width: fit-content;
+}
+
+.anchor-div {
+    border: 1px solid #4F4789;
+    background-color: #4F4789;
+    color: #fbf5f3;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    width: fit-content;
+}
+
+.error-div {
+    border: 1px solid #DF2B25;
+    background-color: #DF2B25;
+    color: #fbf5f3;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    width: fit-content;
 }
 
 @media (max-width: 450px) {

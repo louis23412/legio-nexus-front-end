@@ -1,10 +1,27 @@
 import './App.css';
 import { io } from 'socket.io-client';
 import React from 'react';
+import Markdown from 'react-markdown';
 
 import mainLogo from './logo.png';
 
 const uniqueId = () => Date.now().toString(36) + Math.random().toString(36).substring(2);
+
+const stringifyEventData = (data) => {
+    try {
+        return JSON.stringify(data, null, 4);
+    } catch (error) {
+        return data;
+    }
+}
+
+const parseEventData = (data) => {
+    try {
+        return JSON.parse(data);
+    } catch (error) {
+        return data;
+    }
+} 
 
 class App extends React.Component {
     constructor(props) {
@@ -15,6 +32,7 @@ class App extends React.Component {
             connection: false,
 
             modelIsWorking : false,
+            modelIsStopping : false,
 
             userPrompt : '',
             conversationId : '',
@@ -30,6 +48,8 @@ class App extends React.Component {
     }
 
     componentDidMount() {
+        this.scrollToBottom();
+
         const userAlias = this.getAlias();
         if (userAlias) this.setState({ userAlias });
 
@@ -54,25 +74,230 @@ class App extends React.Component {
 
         this.socket.onAny((eventName, data) => {
             if (eventName === 'worker-state') {
-                this.setState({ modelIsWorking : data.isWorking, modelLockHolder : data.conversationId === null ? '' : data.conversationId })
+                this.setState({
+                    modelIsWorking: data.isWorking,
+                    modelIsStopping: data.isStopping,
+                    modelLockHolder: data.conversationId === null ? '' : data.conversationId
+                });
+
+                return;
             }
 
             const eventId = data?.eventId;
             if (!eventId) return;
 
-            const newLine =  typeof data.data === 'string' ? data.data : JSON.stringify(data.data);
-
-            this.setState(prevState => {
-                const currentText = prevState.agentEvents[eventId] || '';
-                return {
-                    agentEvents: {
+            if (eventName === 'user-prompt') {
+                this.setState(prevState => {
+                    const newEvents = {
                         ...prevState.agentEvents,
-                        [eventId]: `${currentText}${newLine}`
-                    }
-                };
-            });
+                        [eventId]: {
+                            eventType: eventName,
+                            user_alias: data.data.user_alias,
+                            data: data.data.user_prompt
+                        }
+                    };
 
-            this.setAgentEvents(this.state.agentEvents);
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents: newEvents };
+                });
+            }
+
+            if (eventName === 'call-tool') {
+                this.setState(prevState => {
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId]: {
+                            caller: data.data.caller,
+                            eventType: eventName,
+                            tool_name: data.data.tool_name,
+                            arguments: data.data.arguments
+                        }
+                    };
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents: newEvents };
+                });
+            }
+
+            if (eventName === 'tool-result') {
+                this.setState(prevState => {
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId]: {
+                            caller: data.data.caller,
+                            eventType: eventName,
+                            tool_name: data.data.tool_name,
+                            result: data.data.result
+                        }
+                    };
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents: newEvents };
+                });
+            }
+
+            if (eventName === 'ollama-calls-fail') {
+                this.setState(prevState => {
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId]: {
+                            eventType: eventName,
+                            total_tries : data.data.retries,
+                            error_message : data.data.error
+                        }
+                    }
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents : newEvents }
+                })
+            }
+
+            if (eventName === 'ollama-call-retry') {
+                this.setState(prevState => {
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId]: {
+                            eventType: eventName,
+                            current_try : data.data.current_try,
+                            max_tries : data.data.max_tries
+                        }
+                    }
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents : newEvents }
+                })
+            }
+
+            if (eventName === 'no-tool-handler') {
+                this.setState(prevState => {
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId]: {
+                            eventType: eventName,
+                            caller : data.data.caller,
+                            failed_name : data.data.failed_name
+                        }
+                    }
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents : newEvents }
+                })
+            }
+
+            if (eventName === 'think' || eventName === 'content') {
+                this.setState(prevState => {
+                    const currentText = prevState.agentEvents[eventId]?.data || '';
+
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId]: {
+                            agent: data.agentName,
+                            eventType: eventName,
+                            data: `${currentText}${data.data}`
+                        }
+                    };
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents: newEvents };
+                });
+            }
+
+            if (eventName === 'final-answer') {
+                this.setState(prevState => {
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId] : {
+                            final_answer : data.data.final_answer,
+                            eventType : eventName,
+                            runtime : data.data.runtime
+                        }
+                    }
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents : newEvents };
+                })
+            }
+
+            if (eventName === 'sanity-check-1' || eventName === 'sanity-check-2' || eventName === 'sanity-verify') {
+                this.setState(prevState => {
+                    const currentText = prevState.agentEvents[eventId]?.data || '';
+
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId]: {
+                            agent: data.data.agent,
+                            eventType: eventName,
+                            data: `${currentText}${data.data.content}`
+                        }
+                    };
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents: newEvents };
+                });
+            }
+
+            if (eventName === 'sanity-gate') {
+                this.setState(prevState => {
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId]: {
+                            agent: data.data.agent,
+                            eventType: eventName,
+                            values : {
+                                semantic_similarity : data.data.semantic_similarity,
+                                keyword_similarity : data.data.keyword_similarity,
+                                reliability_score : data.data.reliability_score
+                            }
+                        }
+                    };
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents: newEvents };
+                });
+            }
+
+            if (eventName === 'anchor-create') {
+                this.setState(prevState => {
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId]: {
+                            agent: data.data.agent,
+                            eventType: eventName,
+                            data: data.data.content
+                        }
+                    };
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents: newEvents };
+                });
+            }
+
+            if (eventName === 'anchor-skip') {
+                this.setState(prevState => {
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId]: {
+                            agent: data.data,
+                            eventType: eventName
+                        }
+                    };
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents: newEvents };
+                });
+            }
         });
     }
 
@@ -81,7 +306,7 @@ class App extends React.Component {
     }
 
     componentDidUpdate() {
-        console.log(this.state)
+        this.scrollToBottom();
     }
 
     setAlias(a) {
@@ -116,12 +341,16 @@ class App extends React.Component {
         return JSON.parse(window.localStorage.getItem('legio-nexus-user-prompt'));
     }
 
-    setAgentEvents(e) {
+    setAgentEvents (e) {
         window.localStorage.setItem('legio-nexus-agent-events', JSON.stringify(e));
     }
 
     getAgentEvents() {
         return JSON.parse(window.localStorage.getItem('legio-nexus-agent-events'));
+    }
+
+    scrollToBottom() {
+        if (this.messagesEnd) this.messagesEnd.scrollIntoView({ behavior: 'smooth' });
     }
 
     render() {
@@ -245,12 +474,162 @@ class App extends React.Component {
                                 <p>Waiting for events...</p>
                             )}
 
-                            {Object.entries(this.state.agentEvents).map(([eventId, content]) => (
-                                <div key={eventId}>
-                                    <strong>Event ID: {eventId}</strong>
-                                    <div>{content}</div>
-                                </div>
-                            ))}
+                            <div>
+                                {
+                                    Object.entries(this.state.agentEvents).map(([eventId, content]) => {
+                                        if (content.eventType === 'user-prompt') {
+                                            return(
+                                                <div key={eventId} className='user-prompt-div'>
+                                                    <div className='underline bolder'>{`👤 @${content.user_alias}`}</div>
+                                                    <p>{content.data}</p>
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'think') {
+                                            return(
+                                                <div key={eventId} className='think-div'>
+                                                    <div className='underline bolder'>{`🧠 @${content.agent} - think`}</div>
+                                                    <Markdown>{content.data}</Markdown>
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'content') {
+                                            return(
+                                                <div key={eventId} className='speak-div'>
+                                                    <div className='underline bolder'>{`🤖 @${content.agent} - speak`}</div>
+                                                    <Markdown>{content.data}</Markdown>
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'final-answer') {
+                                            return(
+                                                <div key={eventId} className='speak-div'>
+                                                    <div className='underline bolder'>Final Answer:</div>
+                                                    <Markdown>{content.final_answer}</Markdown>
+                                                    <strong><br />Runtime: {content.runtime} seconds</strong>
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'call-tool') {
+                                            return(
+                                                <div key={eventId} className='tool-call-div'>
+                                                    <details>
+                                                        <summary className='black-text'>{`⚙️ @${content.caller} use tool → ${content.tool_name}`}</summary>
+                                                        <pre className='black-background'>{ stringifyEventData(content.arguments) }</pre>
+                                                    </details>
+                                                </div>
+                                            )
+                                        }
+                                        
+                                        if (content.eventType === 'tool-result') {
+                                            return(
+                                                <div key={eventId} className='tool-call-div'>
+                                                    <details>
+                                                        <summary className='black-text'>{`⚙️ Tool result for ${content.tool_name} used by → @${content.caller}`}</summary>
+                                                        <pre className='black-background'>{ stringifyEventData(content.result) }</pre>
+                                                    </details>
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'sanity-check-1') {
+                                            return(
+                                                <div key={eventId} className='sanity-div'>
+                                                    <details>
+                                                        <summary>{`🗒️ @${content.agent} sanity check #1`}</summary>
+                                                        <pre className='black-background'>{content.data}</pre>
+                                                    </details>
+                                                    
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'sanity-check-2') {
+                                            return(
+                                                <div key={eventId} className='sanity-div'>
+                                                    <details>
+                                                        <summary>{`🗒️ @${content.agent} sanity check #2`}</summary>
+                                                        <pre className='black-background'>{content.data}</pre>
+                                                    </details>
+                                                    
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'sanity-verify') {
+                                            return(
+                                                <div key={eventId} className='sanity-div'>
+                                                    <details>
+                                                        <summary>{`🗒️ @${content.agent} sanity verification`}</summary>
+                                                        <pre className='black-background'>{ stringifyEventData(parseEventData(content.data)) }</pre>
+                                                    </details>
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'sanity-gate') {
+                                            console.log(content)
+                                            return(
+                                                <div key={eventId} className='sanity-div'>
+                                                    <details>
+                                                        <summary>{`🗒️ @${content.agent} sanity gate`}</summary>
+                                                        <pre className='black-background'>{ stringifyEventData(content.values) }</pre>
+                                                    </details>
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'anchor-create') {
+                                            return(
+                                                <div key={eventId} className='anchor-div'>
+                                                    <details>
+                                                        <summary>{`🚩 New context anchor created for @${content.agent}`}</summary>
+                                                        <pre className='black-background'>{content.data}</pre>
+                                                    </details>
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'anchor-skip') {
+                                            return(
+                                                <div key={eventId} className='anchor-div'>
+                                                    {`🔴 Context anchor creation skipped for @${content.agent}`}
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'ollama-calls-fail') {
+                                            return(
+                                                <div key={eventId} className='error-div'>
+                                                    {`⚠️ System critical fail. Total retries: ${content.total_tries}. Error: ${content.error_message}`}
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'ollama-call-retry') {
+                                            return(
+                                                <div key={eventId} className='error-div'>
+                                                    {`⚠️ System chat call fail. Retrying... ${content.current_try} / ${content.max_tries}`}
+                                                </div>
+                                            )
+                                        }
+
+                                        if (content.eventType === 'no-tool-handler') {
+                                            return(
+                                                <div key={eventId} className='error-div'>
+                                                    {`⚠️ @${content.caller} tried to use a tool with no handler. Tool name used: "${content.failed_name}"`}
+                                                </div>
+                                            )
+                                        }
+                                    })
+                                }
+
+                                <div ref={(el) => (this.messagesEnd = el)} />
+                            </div>
                         </div>
 
                         <button
@@ -296,9 +675,15 @@ class App extends React.Component {
                                 }
                             }
 
-                            disabled={this.state.userPrompt.length < 5 ? true : false}
+                            disabled={
+                                this.state.userPrompt.length < 5 ? true : false
+                            }
                         >
-                            {this.state.modelIsWorking && this.state.modelLockHolder === this.state.conversationId ? '◻ Stop' : '▷ Start'}
+                            {
+                                this.state.modelIsWorking && this.state.modelLockHolder === this.state.conversationId 
+                                    ? this.state.modelIsStopping ? 'Stopping...' : '◻ Stop'
+                                    : '▷ Start'
+                            }
                         </button>
 
                         <button
