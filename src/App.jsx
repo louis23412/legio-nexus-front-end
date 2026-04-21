@@ -47,23 +47,39 @@ class App extends React.Component {
         this.socketAddress = `${import.meta.env.localIp}:3005/chat`;
     }
 
+    isValidAlias(alias) {
+        return typeof alias === 'string' && alias.trim().length > 0;
+    }
+
+    isValidPrompt(prompt) {
+        return typeof prompt === 'string' && prompt.trim().length >= 5;
+    }
+
+    getDefaultAlias() {
+        return 'default-user';
+    }
+
+    trimAndValidateAlias(alias) {
+        const trimmed = (alias || '').trim();
+        return trimmed.length > 0 ? trimmed : this.getDefaultAlias();
+    }
+
     componentDidMount() {
         this.scrollToBottom();
 
         const userAlias = this.getAlias();
-        if (userAlias) this.setState({ userAlias });
-
         const conversationId = this.getConversationId();
-        if (conversationId) this.setState({ conversationId });
-
-        const isReady = this.getReadyState();
-        if (isReady) this.setState({ isReady });
-
+        const isReady = this.getReadyState() || false;
         const userPrompt = this.getUserPrompt();
-        if (userPrompt) this.setState({ userPrompt });
+        const agentEvents = this.getAgentEvents() || {};
 
-        const agentEvents = this.getAgentEvents();
-        if (agentEvents) this.setState({ agentEvents });
+        this.setState({
+            userAlias,
+            conversationId,
+            isReady,
+            userPrompt,
+            agentEvents
+        });
 
         this.socket = io(this.socketAddress);
 
@@ -310,19 +326,22 @@ class App extends React.Component {
     }
 
     setAlias(a) {
-        window.localStorage.setItem('legio-nexus-alias', JSON.stringify(a));
+        const validAlias = this.trimAndValidateAlias(a);
+        window.localStorage.setItem('legio-nexus-alias', JSON.stringify(validAlias));
     }
 
     getAlias() {
-        return JSON.parse(window.localStorage.getItem('legio-nexus-alias'));
+        const stored = JSON.parse(window.localStorage.getItem('legio-nexus-alias'));
+        return this.trimAndValidateAlias(stored);
     }
 
     setConversationId(id) {
-        window.localStorage.setItem('legio-nexus-conversation-id', JSON.stringify(id));
+        window.localStorage.setItem('legio-nexus-conversation-id', JSON.stringify(id || ''));
     }
 
     getConversationId() {
-        return JSON.parse(window.localStorage.getItem('legio-nexus-conversation-id'));
+        const id = JSON.parse(window.localStorage.getItem('legio-nexus-conversation-id'));
+        return typeof id === 'string' && id.length > 0 ? id : '';
     }
 
     setReadyState(bool) {
@@ -330,15 +349,17 @@ class App extends React.Component {
     }
 
     getReadyState() {
-        return JSON.parse(window.localStorage.getItem('legio-nexus-ready-state'));
+        const stored = JSON.parse(window.localStorage.getItem('legio-nexus-ready-state'));
+        return typeof stored === 'boolean' ? stored : false;
     }
 
     setUserPrompt(p) {
-        window.localStorage.setItem('legio-nexus-user-prompt', JSON.stringify(p));
+        window.localStorage.setItem('legio-nexus-user-prompt', JSON.stringify(p || ''));
     }
 
     getUserPrompt() {
-        return JSON.parse(window.localStorage.getItem('legio-nexus-user-prompt'));
+        const stored = JSON.parse(window.localStorage.getItem('legio-nexus-user-prompt'));
+        return typeof stored === 'string' ? stored : '';
     }
 
     setAgentEvents (e) {
@@ -346,7 +367,8 @@ class App extends React.Component {
     }
 
     getAgentEvents() {
-        return JSON.parse(window.localStorage.getItem('legio-nexus-agent-events'));
+        const stored = JSON.parse(window.localStorage.getItem('legio-nexus-agent-events'));
+        return stored && typeof stored === 'object' ? stored : {};
     }
 
     scrollToBottom() {
@@ -366,35 +388,54 @@ class App extends React.Component {
                         <img src={mainLogo} alt="main logo" />
 
                         <textarea
+                            value={this.state.userAlias}
                             onChange={(i) => { 
-                                this.setState({ userAlias : i.target.value });
+                                this.setState({ userAlias: i.target.value });
                                 this.setAlias(i.target.value);
                             }}
+                            onBlur={(i) => {
+                                const cleaned = this.trimAndValidateAlias(i.target.value);
+                                if (cleaned !== this.state.userAlias) {
+                                    this.setState({ userAlias: cleaned });
+                                    this.setAlias(cleaned);
+                                }
+                            }}
                             className='user-input size-20'
-                            placeholder={this.state.userAlias}
+                            placeholder="Your alias (default-user)"
                         />
 
                         <textarea
+                            value={this.state.userPrompt}
                             onChange={(i) => {
-                                this.setState({ userPrompt : i.target.value });
+                                this.setState({ userPrompt: i.target.value });
                                 this.setUserPrompt(i.target.value);
                             }}
+                            onBlur={(i) => {
+                                const trimmed = i.target.value.trim();
+                                if (trimmed !== i.target.value) {
+                                    this.setState({ userPrompt: trimmed });
+                                    this.setUserPrompt(trimmed);
+                                }
+                            }}
                             className='user-input size-50'
-                            id = 'user-prompt'
+                            id="user-prompt"
                             placeholder="What would you like to know?"
-                            value={this.state.userPrompt}
                         />
 
                         <div>
                             <button
                                 className='user-button'
-
                                 onClick={() => {
+                                    if (!this.isValidPrompt(this.state.userPrompt) || 
+                                        !this.isValidAlias(this.state.userAlias)) {
+                                        return;
+                                    }
+
                                     let newId = this.state.conversationId;
 
                                     if (this.state.conversationId.length === 0) {
                                         newId = uniqueId();
-                                        this.setConversationId(newId)
+                                        this.setConversationId(newId);
                                     }
 
                                     this.setReadyState(true);
@@ -402,10 +443,12 @@ class App extends React.Component {
                                     this.setState({
                                         isReady: true,
                                         conversationId: newId
-                                    })
+                                    });
                                 }}
-
-                                disabled={this.state.userPrompt.length < 5 ? true : false}
+                                disabled={
+                                    !this.isValidPrompt(this.state.userPrompt) ||
+                                    !this.isValidAlias(this.state.userAlias)
+                                }
                             >
                                 ▷ Start Agents
                             </button>
@@ -415,7 +458,8 @@ class App extends React.Component {
                                 onClick={() => { 
                                     this.setState({ userPrompt: '' });
                                     this.setUserPrompt('');
-                                    document.getElementById('user-prompt').value = '';
+                                    const el = document.getElementById('user-prompt');
+                                    if (el) el.value = '';
                                 }}
                             >
                                 ↻ Clear Prompt
@@ -423,8 +467,7 @@ class App extends React.Component {
                         </div>
                     </div>
                 </div>
-
-            )
+            );
         }
         
         else {
@@ -444,12 +487,12 @@ class App extends React.Component {
                                     userPrompt : '',
                                     isReady : false,
                                     agentEvents : {}
-                                })
+                                });
 
                                 if (this.state.modelIsWorking && this.state.modelLockHolder === this.state.conversationId) {
                                     this.socket.emit('stop-conversation', {
                                         conversationId: this.state.conversationId
-                                    }) 
+                                    }); 
                                 }
                             }}
                         >
@@ -460,7 +503,6 @@ class App extends React.Component {
                             <p className={`${this.state.modelIsWorking ? 'model-working' : 'model-idle'}`}>𖡎 {this.state.modelIsWorking? 'working' : 'idle'}</p>
                             <p className={`${this.state.connection ? 'server-connected' : 'server-disconnected'}`}>⇄ {this.state.connection ? 'connected' : 'disconnected'}</p>
                         </div>
-
                     </div>
 
                     <div className='ready-info-bar'>
@@ -483,7 +525,7 @@ class App extends React.Component {
                                                     <div className='underline bolder'>{`👤 @${content.user_alias}`}</div>
                                                     <p>{content.data}</p>
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'think') {
@@ -492,7 +534,7 @@ class App extends React.Component {
                                                     <div className='underline bolder'>{`🧠 @${content.agent} - think`}</div>
                                                     <Markdown>{content.data}</Markdown>
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'content') {
@@ -501,17 +543,17 @@ class App extends React.Component {
                                                     <div className='underline bolder'>{`🤖 @${content.agent} - speak`}</div>
                                                     <Markdown>{content.data}</Markdown>
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'final-answer') {
                                             return(
                                                 <div key={eventId} className='speak-div'>
                                                     <div className='underline bolder'>Final Answer:</div>
-                                                    <Markdown>{content.final_answer}</Markdown>
+                                                    <br /><Markdown>{content.final_answer}</Markdown>
                                                     <strong><br />Runtime: {content.runtime} seconds</strong>
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'call-tool') {
@@ -522,7 +564,7 @@ class App extends React.Component {
                                                         <pre className='black-background'>{ stringifyEventData(content.arguments) }</pre>
                                                     </details>
                                                 </div>
-                                            )
+                                            );
                                         }
                                         
                                         if (content.eventType === 'tool-result') {
@@ -533,7 +575,7 @@ class App extends React.Component {
                                                         <pre className='black-background'>{ stringifyEventData(content.result) }</pre>
                                                     </details>
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'sanity-check-1') {
@@ -543,9 +585,8 @@ class App extends React.Component {
                                                         <summary>{`🗒️ @${content.agent} sanity check #1`}</summary>
                                                         <pre className='black-background'>{content.data}</pre>
                                                     </details>
-                                                    
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'sanity-check-2') {
@@ -555,9 +596,8 @@ class App extends React.Component {
                                                         <summary>{`🗒️ @${content.agent} sanity check #2`}</summary>
                                                         <pre className='black-background'>{content.data}</pre>
                                                     </details>
-                                                    
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'sanity-verify') {
@@ -568,11 +608,10 @@ class App extends React.Component {
                                                         <pre className='black-background'>{ stringifyEventData(parseEventData(content.data)) }</pre>
                                                     </details>
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'sanity-gate') {
-                                            console.log(content)
                                             return(
                                                 <div key={eventId} className='sanity-div'>
                                                     <details>
@@ -580,7 +619,7 @@ class App extends React.Component {
                                                         <pre className='black-background'>{ stringifyEventData(content.values) }</pre>
                                                     </details>
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'anchor-create') {
@@ -591,7 +630,7 @@ class App extends React.Component {
                                                         <pre className='black-background'>{content.data}</pre>
                                                     </details>
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'anchor-skip') {
@@ -599,7 +638,7 @@ class App extends React.Component {
                                                 <div key={eventId} className='anchor-div'>
                                                     {`🔴 Context anchor creation skipped for @${content.agent}`}
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'ollama-calls-fail') {
@@ -607,7 +646,7 @@ class App extends React.Component {
                                                 <div key={eventId} className='error-div'>
                                                     {`⚠️ System critical fail. Total retries: ${content.total_tries}. Error: ${content.error_message}`}
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'ollama-call-retry') {
@@ -615,7 +654,7 @@ class App extends React.Component {
                                                 <div key={eventId} className='error-div'>
                                                     {`⚠️ System chat call fail. Retrying... ${content.current_try} / ${content.max_tries}`}
                                                 </div>
-                                            )
+                                            );
                                         }
 
                                         if (content.eventType === 'no-tool-handler') {
@@ -623,7 +662,7 @@ class App extends React.Component {
                                                 <div key={eventId} className='error-div'>
                                                     {`⚠️ @${content.caller} tried to use a tool with no handler. Tool name used: "${content.failed_name}"`}
                                                 </div>
-                                            )
+                                            );
                                         }
                                     })
                                 }
@@ -636,7 +675,7 @@ class App extends React.Component {
                             className='user-button event-clear'
                             onClick={() => {
                                 this.setAgentEvents({});
-                                this.setState({ agentEvents : {} })
+                                this.setState({ agentEvents : {} });
                             }}
                         >
                             ↻ Clear Events
@@ -645,38 +684,54 @@ class App extends React.Component {
 
                     <div className='sticky-bottom'>
                         <textarea
+                            value={this.state.userPrompt}
                             onChange={(i) => {
                                 this.setUserPrompt(i.target.value);
-                                this.setState({ userPrompt : i.target.value })
+                                this.setState({ userPrompt: i.target.value });
+                            }}
+                            onBlur={(i) => {
+                                const trimmed = i.target.value.trim();
+                                if (trimmed !== i.target.value) {
+                                    this.setState({ userPrompt: trimmed });
+                                    this.setUserPrompt(trimmed);
+                                }
                             }}
                             className='user-input size-50'
-                            id = 'user-prompt2'
+                            id="user-prompt2"
                             placeholder="What would you like to know?"
-                            value={this.state.userPrompt}
                         />
 
                         <button
                             className='user-button'
-                            onClick={
-                                () => {
-                                    if (this.state.modelIsWorking && this.state.modelLockHolder === this.state.conversationId) {
-                                        this.socket.emit('stop-conversation', {
-                                            conversationId: this.state.conversationId,
-                                        });
-                                    }
+                            onClick={() => {
+                                const isMyConversationWorking = 
+                                    this.state.modelIsWorking && 
+                                    this.state.modelLockHolder === this.state.conversationId;
 
-                                    else {
-                                        this.socket.emit('start-conversation', {
-                                            alias : this.state.userAlias,
-                                            prompt : this.state.userPrompt, 
-                                            conversationId: this.state.conversationId,
-                                        });
-                                    }
+                                if (!isMyConversationWorking && !this.isValidPrompt(this.state.userPrompt)) {
+                                    return;
                                 }
-                            }
 
+                                if (isMyConversationWorking) {
+                                    this.socket.emit('stop-conversation', {
+                                        conversationId: this.state.conversationId,
+                                    });
+                                } else {
+                                    const cleanPrompt = this.state.userPrompt.trim();
+                                    this.socket.emit('start-conversation', {
+                                        alias: this.state.userAlias,
+                                        prompt: cleanPrompt,
+                                        conversationId: this.state.conversationId,
+                                    });
+                                }
+                            }}
                             disabled={
-                                this.state.userPrompt.length < 5 ? true : false
+                                (this.state.modelIsWorking && 
+                                 this.state.modelLockHolder === this.state.conversationId && 
+                                 this.state.modelIsStopping) ||
+                                (!(this.state.modelIsWorking && 
+                                   this.state.modelLockHolder === this.state.conversationId) &&
+                                 !this.isValidPrompt(this.state.userPrompt))
                             }
                         >
                             {
@@ -691,7 +746,8 @@ class App extends React.Component {
                             onClick={() => {
                                 this.setUserPrompt('');
                                 this.setState({ userPrompt: '' });
-                                document.getElementById('user-prompt2').value = '';
+                                const el = document.getElementById('user-prompt2');
+                                if (el) el.value = '';
                             }}
                         >
                             ↻ Clear Prompt
