@@ -102,6 +102,23 @@ class App extends React.Component {
             const eventId = data?.eventId;
             if (!eventId) return;
 
+            if (eventName === 'context-capacity') {
+                this.setState(prevState => {
+                    const newEvents = {
+                        ...prevState.agentEvents,
+                        [eventId]: {
+                            eventType: eventName,
+                            fill_pct: data.data.fill_pct,
+                            token_size: data.data.token_size
+                        }
+                    };
+
+                    this.setAgentEvents(newEvents);
+
+                    return { agentEvents: newEvents };
+                });
+            }
+
             if (eventName === 'user-prompt') {
                 this.setState(prevState => {
                     const newEvents = {
@@ -519,6 +536,14 @@ class App extends React.Component {
                             <div>
                                 {
                                     Object.entries(this.state.agentEvents).map(([eventId, content]) => {
+                                        if (content.eventType === 'context-capacity') {
+                                            return(
+                                                <div key={eventId} className='sanity-div'>
+                                                    <div>{`🖴 Context capacity: ${content.fill_pct}% [~${content.token_size}t]`}</div>
+                                                </div>
+                                            );
+                                        }
+
                                         if (content.eventType === 'user-prompt') {
                                             return(
                                                 <div key={eventId} className='user-prompt-div'>
